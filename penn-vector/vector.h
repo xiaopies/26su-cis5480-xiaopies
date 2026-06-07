@@ -112,254 +112,196 @@ typedef struct vector_info_st {
 //
 // example:
 // vector(int) v = vector_new(int, 10, NULL);
-#define vector_new(T, init_capacity, dtor) \
-  ({                                       \
-    /* TODO */                             \
-    NULL;                                  \
+#define vector_alloc_size(capacity, element_size) \
+  (sizeof(vector_info) + ((capacity) * (element_size)))
+
+#define vector_data_from_header(T, header) ((T*)((header) + 1))
+
+#define vector_next_capacity(capacity) ((capacity) == 0 ? 1 : (capacity)*2)
+
+#define vector_new(T, init_capacity, dtor)                               \
+  ({                                                                     \
+    size_t pv_capacity = (init_capacity);                                \
+    vector_info* pv_header =                                             \
+        (vector_info*)malloc(vector_alloc_size(pv_capacity, sizeof(T))); \
+    if (pv_header == NULL) {                                             \
+      panic("vector_new: malloc failed\n");                              \
+    }                                                                    \
+    pv_header->len = 0;                                                  \
+    pv_header->capacity = pv_capacity;                                   \
+    pv_header->ele_dtor = (dtor);                                        \
+    vector_data_from_header(T, pv_header);                               \
   })
 
-// Synopsis:
-//   size_t vector_len(vector(T)* self);
-//
-// Description:
-//
-// Returns the length of the specified vector
-//
-// args:
-// - self: a pointer to the vector we want to get the length of
-//
-// returns:
-// - the length of the vector
-//
-// example:
-// vector(int) v = ...;
-// size_t len = vector_len(&v);
-#define vector_len(self) \
-  ({                     \
-    /* TODO */           \
-    0U;                  \
+#define vector_len(self)                              \
+  ({                                                  \
+    vector_info* pv_header = get_vector_header(self); \
+    pv_header == NULL ? 0U : pv_header->len;          \
   })
 
-// Synopsis:
-//   size_t vector_capacity(vector(T)* self);
-//
-// Description:
-//
-// Returns the capacity of the specified vector
-//
-// args:
-// - self: a pointer to the vector we want to get the length of
-//
-// returns:
-// - the capacity of the vector
-//
-// example:
-// vector(int) v = ...;
-// size_t len = vector_capacity(&v);
-#define vector_capacity(self) \
-  ({                          \
-    /* TODO */                \
-    0U;                       \
+#define vector_capacity(self)                         \
+  ({                                                  \
+    vector_info* pv_header = get_vector_header(self); \
+    pv_header == NULL ? 0U : pv_header->capacity;     \
   })
 
-// Synopsis:
-//   size_t vector_element_size(vector(T)* self);
-//
-// Description:
-//
-// Returns the size of elements in the specified vector
-// effectively the same as sizeof(T) when given a pointer to a vector(T).
-//
-// args:
-// - self: a pointer to the vector we want to examine
-//
-// returns:
-// - size of the element of a vector.
-//
-// example:
-// vector(int) v = ...;
-// size_t ele_size = vector_element_size(&v); // same as sizeof(int)
-#define vector_element_size(self) (4 /* TODO */)
+#define vector_element_size(self) (sizeof(**(self)))
 
-// Synopsis:
-//   void vector_resize(vector(T)* self, size_t new_capacity);
-//
-// Description:
-//
-// resizes the capacity of the vector so that it can hold up to
-// `new_capacity` elements in the vector before a resize would be
-// needed to hold more.
-//
-// If `new_capacity` is <= the current capacity, nothing is done.
-//
-// args:
-// - self: a pointer to the vector we want to resize
-// - n: the new capacity we want the vector to be
-//
-// example:
-// vector(int) v = ...;
-// vector_resize(&v, vector_capacity(&v) * 2);
-#define vector_resize(self, n)                   \
-  ({                                             \
-    /* TODO */                                   \
-    ((void)0); /* (optional) return "nothing" */ \
+#define vector_resize(self, n)                                             \
+  ({                                                                       \
+    typeof(self) vr_vec = (self);                                          \
+    size_t vr_new_capacity = (n);                                          \
+    size_t vr_old_capacity = vector_capacity(vr_vec);                      \
+                                                                           \
+    if (vr_new_capacity > vr_old_capacity) {                               \
+      vector_info* vr_old_header = get_vector_header(vr_vec);              \
+      size_t vr_bytes =                                                    \
+          vector_alloc_size(vr_new_capacity, vector_element_size(vr_vec)); \
+      vector_info* vr_new_header = NULL;                                   \
+                                                                           \
+      if (vr_old_header == NULL) {                                         \
+        vr_new_header = (vector_info*)malloc(vr_bytes);                    \
+        if (vr_new_header != NULL) {                                       \
+          vr_new_header->len = 0;                                          \
+          vr_new_header->ele_dtor = NULL;                                  \
+        }                                                                  \
+      } else {                                                             \
+        vr_new_header = (vector_info*)realloc(vr_old_header, vr_bytes);    \
+      }                                                                    \
+                                                                           \
+      if (vr_new_header == NULL) {                                         \
+        panic("vector_resize: allocation failed\n");                       \
+      }                                                                    \
+                                                                           \
+      vr_new_header->capacity = vr_new_capacity;                           \
+      *vr_vec = (typeof(*vr_vec))(vr_new_header + 1);                      \
+    }                                                                      \
+                                                                           \
+    ((void)0);                                                             \
   })
 
-// Synopsis:
-//   T vector_get(vector(T)* self, size_t index);
-//
-// Description:
-//
-// returns the element at the specified index of the vector
-// panics if the index is out of range.
-//
-// args:
-// - self: a pointer to the vector we want to get an element from
-// - index: the index of the element we want to get
-//
-// example:
-// vector(int) v = ...;
-// vector_get(&v, 0); // Same thing as doing: v[0]; but with bounds checking
-#define vector_get(self, index) \
-  ({                            \
-      /* TODO */                \
+#define vector_get(self, index)                   \
+  ({                                              \
+    typeof(self) pv_vec = (self);                 \
+    size_t pv_index = (index);                    \
+    if (pv_index >= vector_len(pv_vec)) {         \
+      panic("vector_get: index out of bounds\n"); \
+    }                                             \
+    (*pv_vec)[pv_index];                          \
   })
 
-// Synopsis:
-//   void vector_set(vector(T)* self, size_t index, T new_element);
-//
-// Description:
-//
-// sets the element at the specified index of the vector to `new_element`
-// panics if the index is out of range.
-//
-// args:
-// - self: a pointer to the vector we want to modify an element of
-// - index: the index of the element we want to set
-// - new_element: the new value we want to store in the vector
-//
-// example:
-// vector(int) v = ...;
-// vector_set(&v, 0, 3);
-//
-// // Same thing as doing: v[0] = 3; but with bounds checking
-#define vector_set(self, index, ...)             \
-  ({                                             \
-    /* TODO */                                   \
-    ((void)0); /* (optional) return "nothing" */ \
+#define vector_set(self, index, ...)                    \
+  ({                                                    \
+    typeof(self) pv_vec = (self);                       \
+    size_t pv_index = (index);                          \
+    if (pv_index >= vector_len(pv_vec)) {               \
+      panic("vector_set: index out of bounds\n");       \
+    }                                                   \
+                                                        \
+    vector_info* pv_header = get_vector_header(pv_vec); \
+    if (pv_header->ele_dtor != NULL) {                  \
+      pv_header->ele_dtor(&(*pv_vec)[pv_index]);        \
+    }                                                   \
+                                                        \
+    (*pv_vec)[pv_index] = (__VA_ARGS__);                \
+    ((void)0);                                          \
   })
 
-// Synopsis:
-//   void vector_push(vector(T)* self, T new_element);
-//
-// Description:
-// Appends the given element to the end of the vector
-// If a resize is needed and it fails, then this function will panic()
-// If after the operation the new length is greater than the old capacity
-// then a reallocation takes place and all elements are copied over. Any
-// pointers to elements prior to this reallocation are invalid..
-//
-// args:
-// - self: a pointer to the vector we want to push onto
-// - new_element: the new value we want to store in the vector
-//
-// example:
-// vector(int) v = ...;
-// vector_push(&v, 3);
-#define vector_push(self, ...)                   \
-  ({                                             \
-    /* TODO */                                   \
-    ((void)0); /* (optional) return "nothing" */ \
+#define vector_push(self, ...)                                  \
+  ({                                                            \
+    typeof(self) vp_vec = (self);                               \
+    if (vector_len(vp_vec) == vector_capacity(vp_vec)) {        \
+      size_t vp_capacity = vector_capacity(vp_vec);             \
+      vector_resize(vp_vec, vector_next_capacity(vp_capacity)); \
+    }                                                           \
+                                                                \
+    vector_info* vp_header = get_vector_header(vp_vec);         \
+    (*vp_vec)[vp_header->len] = (__VA_ARGS__);                  \
+    vp_header->len++;                                           \
+    ((void)0);                                                  \
   })
 
-// Synopsis:
-//   bool vector_pop(vector(T)* self);
-//
-// Description:
-// removes and destroys the last element of the vector
-//
-// args:
-// - self: a pointer to the vector we want to pop.
-//
-// example:
-// vector(int) v = ...;
-// bool success = vector_pop(&v);
-#define vector_pop(self)                         \
-  ({                                             \
-    /* TODO */                                   \
-    ((void)0); /* (optional) return "nothing" */ \
+#define vector_pop(self)                                 \
+  ({                                                     \
+    typeof(self) pv_vec = (self);                        \
+    vector_info* pv_header = get_vector_header(pv_vec);  \
+    bool pv_removed = false;                             \
+                                                         \
+    if (pv_header != NULL && pv_header->len > 0) {       \
+      pv_header->len--;                                  \
+      if (pv_header->ele_dtor != NULL) {                 \
+        pv_header->ele_dtor(&(*pv_vec)[pv_header->len]); \
+      }                                                  \
+      pv_removed = true;                                 \
+    }                                                    \
+                                                         \
+    pv_removed;                                          \
   })
 
-// Synopsis:
-//   void vector_insert(vector(T)* self, size_t index, T new_element);
-//
-// Description:
-// Inserts the given element to the specified location in the vector.
-// panic()'s if the index is > the length of the vector.
-// If a resize is needed and it fails, then this function will panic()
-// If after the operation the new length is greater than the old capacity
-// then a reallocation takes place and all elements are copied over. Any
-// pointers to elements prior to this reallocation are invalid.
-//
-// args:
-// - self: a pointer to the vector we want to insert into
-// - index: the index of the element we want to insert at.
-//          Elements at this index and after it are "shifted" up
-//          one position. If index is equal to the length, then we insert
-//          at the end of the vector.
-// - new_element: the new value we want to store in the vector
-//
-// example:
-// vector(int) v = ...;
-// /* if v = {3, 2, 4}; */
-// vector_insert(&v, 1, 6);
-// /* after: v = {3, 6, 2, 4}; */
-#define vector_insert(vec, index, ...)           \
-  ({                                             \
-    /* TODO */                                   \
-    ((void)0); /* (optional) return "nothing" */ \
+#define vector_insert(vec, index, ...)                                     \
+  ({                                                                       \
+    typeof(vec) vi_vec = (vec);                                            \
+    size_t vi_index = (index);                                             \
+    size_t vi_len = vector_len(vi_vec);                                    \
+                                                                           \
+    if (vi_index > vi_len) {                                               \
+      panic("vector_insert: index out of bounds\n");                       \
+    }                                                                      \
+                                                                           \
+    if (vi_len == vector_capacity(vi_vec)) {                               \
+      size_t vi_capacity = vector_capacity(vi_vec);                        \
+      vector_resize(vi_vec, vector_next_capacity(vi_capacity));            \
+    }                                                                      \
+                                                                           \
+    vector_info* vi_header = get_vector_header(vi_vec);                    \
+    for (size_t vi_curr = vi_header->len; vi_curr > vi_index; vi_curr--) { \
+      (*vi_vec)[vi_curr] = (*vi_vec)[vi_curr - 1];                         \
+    }                                                                      \
+                                                                           \
+    (*vi_vec)[vi_index] = (__VA_ARGS__);                                   \
+    vi_header->len++;                                                      \
+    ((void)0);                                                             \
   })
 
-// Synopsis:
-//   void vector_erase(vector(T)* self, size_t index);
-//
-// Description:
-// Erases an element at the specified location in the vector.
-// the erased element is destructored (cleaned up) with the ele_dtor function.
-// panic()'s if the index is >= the length of the vector.
-//
-// args:
-// - self: a pointer to the vector we want to modify
-// - index: the index of the element we want to erase at.
-//          Elements after this index are "shifted" down one index.
-//
-// example:
-// vector(int) v = ...;
-// /* if v = {3, 2, 4}; */
-// vector_erase(&v, 2);
-// /* after: v = {3, 2}; */
-#define vector_erase(vec, index)                 \
-  ({                                             \
-    /* TODO */                                   \
-    ((void)0); /* (optional) return "nothing" */ \
+#define vector_erase(vec, index)                                               \
+  ({                                                                           \
+    typeof(vec) pv_vec = (vec);                                                \
+    size_t pv_index = (index);                                                 \
+                                                                               \
+    if (pv_index >= vector_len(pv_vec)) {                                      \
+      panic("vector_erase: index out of bounds\n");                            \
+    }                                                                          \
+                                                                               \
+    vector_info* pv_header = get_vector_header(pv_vec);                        \
+    if (pv_header->ele_dtor != NULL) {                                         \
+      pv_header->ele_dtor(&(*pv_vec)[pv_index]);                               \
+    }                                                                          \
+                                                                               \
+    for (size_t pv_curr = pv_index; pv_curr + 1 < pv_header->len; pv_curr++) { \
+      (*pv_vec)[pv_curr] = (*pv_vec)[pv_curr + 1];                             \
+    }                                                                          \
+                                                                               \
+    pv_header->len--;                                                          \
+    ((void)0);                                                                 \
   })
 
-// Synopsis:
-//   void vector_free(vector(T)* self);
-//
-// Description:
-// free (Destruct) the vector.
-// All elements are destructed and storage is deallocated.
-//
-// args:
-// - self: a pointer to the vector we want to free
-//
-// example:
-// vector(int) v = ...;
-// vector_free(&v);
-#define vector_free(self) \
-  ({                      \
-      /* TODO */          \
+#define vector_free(self)                                                  \
+  ({                                                                       \
+    typeof(self) pv_vec = (self);                                          \
+    vector_info* pv_header = get_vector_header(pv_vec);                    \
+                                                                           \
+    if (pv_header != NULL) {                                               \
+      if (pv_header->ele_dtor != NULL) {                                   \
+        for (size_t pv_index = 0; pv_index < pv_header->len; pv_index++) { \
+          pv_header->ele_dtor(&(*pv_vec)[pv_index]);                       \
+        }                                                                  \
+      }                                                                    \
+                                                                           \
+      free(pv_header);                                                     \
+      *pv_vec = NULL;                                                      \
+    }                                                                      \
+                                                                           \
+    ((void)0);                                                             \
   })
 
 #endif  // VECTOR_H_
